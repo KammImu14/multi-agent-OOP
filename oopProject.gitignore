@@ -1,0 +1,20 @@
+# File biên dịch
+*.exe
+*.o
+*.obj
+*.out
+*.a
+*.lib
+
+# Thư mục build
+build/
+cmake-build-*/
+
+# IDE
+.vs/
+.vscode/
+*.user
+
+# Hệ điều hành
+.DS_Store
+Thumbs.db

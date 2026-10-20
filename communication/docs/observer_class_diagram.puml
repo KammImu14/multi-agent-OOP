@@ -1,0 +1,133 @@
+@startuml Communication_Observer
+' Class diagram of the Communication module (Observer Pattern)
+' View online: https://www.plantuml.com/plantuml (paste this file)
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+
+package "agentfw::communication" {
+
+  enum MessageType {
+    Request
+    Response
+    Event
+    Broadcast
+    Error
+  }
+
+  class Message <<immutable>> {
+    - id_ : string
+    - sender_ : string
+    - topic_ : string
+    - content_ : string
+    - type_ : MessageType
+    - receiver_ : optional<string>
+    - replyTo_ : optional<string>
+    - metadata_ : map<string,string>
+    - timestamp_ : time_point
+    + isDirect() : bool
+    + createReply(from, content, type) : Message
+    + toString() : string
+  }
+
+  interface IObserver <<Observer>> {
+    + {abstract} getObserverId() : string
+    + {abstract} update(msg : const Message&) : void
+  }
+
+  interface ISubject <<Subject>> {
+    + {abstract} attach(obs, topic = "*") : void
+    + {abstract} detach(obs, topic = "") : void
+    + {abstract} notify(msg : const Message&) : size_t
+  }
+
+  class MessageBus <<ConcreteSubject>> {
+    - subscribers_ : map<string, vector<weak_ptr<IObserver>>>
+    - registry_ : map<string, weak_ptr<IObserver>>
+    - history_ : deque<Message>
+    - deadLetters_ : vector<Message>
+    - errors_ : vector<DeliveryError>
+    - mutex_ : recursive_mutex
+    + attach(obs, topic) : void
+    + detach(obs, topic) : void
+    + notify(msg) : size_t
+    + publish(msg) : size_t
+    + registerObserver(obs) : void
+    + getHistory(topic?, sender?) : vector<Message>
+    + getDeadLetters() : vector<Message>
+    + getErrors() : vector<DeliveryError>
+    - resolveRecipients(msg) : vector<shared_ptr<IObserver>>
+  }
+
+  class CommunicatingAgent <<ConcreteObserver>> {
+    - name_ : string
+    - bus_ : shared_ptr<MessageBus>
+    - handlers_ : vector<pair<string, Handler>>
+    - inbox_ : vector<Message>
+    + update(msg) : void {final}
+    + connect(bus) : void
+    + disconnect() : void
+    + subscribe(topic, handler = nullptr) : void
+    + unsubscribe(topic) : void
+    + send(receiver, content, topic, type) : size_t
+    + publish(topic, content, type) : size_t
+    + broadcast(content) : size_t
+    + reply(original, content) : size_t
+    + inbox() : vector<Message>
+    # onMessage(msg) : void {virtual}
+  }
+
+  class TopicMatcher <<utility>> {
+    + {static} matches(pattern, topic) : bool
+  }
+
+  class DeliveryError <<struct>> {
+    + messageId : string
+    + observerId : string
+    + what : string
+  }
+}
+
+package "agentfw::agents" {
+  class LLMAgent <<Observer + Strategy client>> {
+    - strategy_ : shared_ptr<LLMStrategy>
+    - role_ : string
+    - inputTopic_ : string
+    - outputTopic_ : string
+    + start() : void
+    + setStrategy(s, label) : void
+    + ask(input) : string
+    # onMessage(msg) : void {override}
+    # buildPrompt(msg) : string {virtual}
+  }
+}
+
+package "LLM module (feature/llm-adapter)" #EEEEEE {
+  interface LLMStrategy <<Strategy>> {
+    + {abstract} generate(prompt) : string
+  }
+  class OpenAILLM
+  class ClaudeLLM
+  class GeminiLLM
+}
+
+package "Other framework modules" #EEEEEE {
+  class TaskContext <<State>>
+}
+
+ISubject <|.. MessageBus
+IObserver <|.. CommunicatingAgent
+MessageBus o--> "0..*" IObserver : notifies >
+MessageBus *-- "0..*" Message : history
+MessageBus *-- "0..*" DeliveryError
+MessageBus ..> TopicMatcher
+CommunicatingAgent --> "0..1" MessageBus : sends via >
+CommunicatingAgent ..> Message : creates
+Message --> MessageType
+CommunicatingAgent <|-- LLMAgent
+LLMAgent o--> "1" LLMStrategy : strategy_
+LLMStrategy <|.. OpenAILLM
+LLMStrategy <|.. ClaudeLLM
+LLMStrategy <|.. GeminiLLM
+TaskContext ..> MessageBus : publish "task.status.changed"
+
+@enduml

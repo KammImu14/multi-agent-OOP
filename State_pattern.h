@@ -1,21 +1,65 @@
 #pragma once
 #include <string>
-#include <iostream>
+#include <memory>
+
 using namespace std;
 
-enum class State_Pattern {
-    IDLE,
-    IN_PROGRESS,
-    COMPLETED,
-    FAILED
+class TaskContext; 
+
+class TaskState {
+public:
+    virtual ~TaskState() = default;
+    virtual string name() const = 0;
+    virtual bool start(TaskContext& c)    { return false; }
+    virtual bool complete(TaskContext& c) { return false; }
+    virtual bool fail(TaskContext& c)     { return false; }
+    virtual bool reset(TaskContext& c)    { return false; }
 };
 
-inline string stateToString(State_Pattern s) {
-    switch (s) {
-        case State_Pattern::IDLE:        return "IDLE";
-        case State_Pattern::IN_PROGRESS: return "IN_PROGRESS";
-        case State_Pattern::COMPLETED:   return "COMPLETED";
-        case State_Pattern::FAILED:      return "FAILED";
-    }
-    return "UNKNOWN";
+class TaskContext {
+public:
+    virtual ~TaskContext() = default;
+    virtual void changestate(shared_ptr<TaskState> next) = 0;
+};
+
+class IdleState : public TaskState {
+public:
+    string name() const override { return "IDLE"; }
+    bool start(TaskContext& c) override;
+};
+class InProgressState : public TaskState {
+public:
+    string name() const override { return "IN_PROGRESS"; }
+    bool complete(TaskContext& c) override;
+    bool fail(TaskContext& c) override;
+};
+class CompletedState : public TaskState {
+public:
+    string name() const override { return "COMPLETED"; }
+    bool reset(TaskContext& c) override;
+};
+class FailedState : public TaskState {
+public:
+    string name() const override { return "FAILED"; }
+    bool start(TaskContext& c) override; // retry
+    bool reset(TaskContext& c) override;
+};
+
+bool IdleState::start(TaskContext& c) { 
+    c.changestate(make_shared<InProgressState>()); return true; 
+}
+bool InProgressState::complete(TaskContext& c) { 
+    c.changestate(make_shared<CompletedState>()); return true; 
+}
+bool InProgressState::fail(TaskContext& c) { 
+    c.changestate(make_shared<FailedState>()); return true; 
+}
+bool CompletedState::reset(TaskContext& c) { 
+    c.changestate(make_shared<IdleState>()); return true; 
+}
+bool FailedState::start(TaskContext& c) { 
+    c.changestate(make_shared<InProgressState>()); return true; 
+}
+bool FailedState::reset(TaskContext& c) { 
+    c.changestate(make_shared<IdleState>()); return true; 
 }
